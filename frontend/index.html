@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#111827">
+  <title>Bedrock Probe · Model observatory</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <section id="signin-gate" class="signin-gate" aria-live="polite">
+    <div class="panel signin-card">
+      <h1>Bedrock Probe</h1>
+      <p id="signin-message">Connecting to sign in…</p>
+      <button id="signin-retry" class="button" hidden>Try again</button>
+      <noscript><p>Enable JavaScript to sign in and view your measurements.</p></noscript>
+    </div>
+  </section>
+  <div id="dashboard" hidden>
+  <header class="topbar">
+    <a class="brand" href="/"><span class="brand-mark">b<span>·</span></span> bedrock<span class="brand-light">probe</span></a>
+    <nav aria-label="Main navigation"><button class="nav-item active" data-tab="overview">Overview</button><button class="nav-item" data-tab="management">Management</button></nav>
+    <span id="region-coverage" class="coverage-label">6 regions · 10-minute probes</span>
+    <span id="page-name" hidden>Overview</span>
+    <div class="header-right"><span id="mode" class="badge">Connecting</span><button id="auth" class="button quiet">Sign in</button></div>
+  </header>
+  <div class="shell">
+    <main>
+      <section id="overview" class="tab">
+        <div class="page-heading"><div><h1>Performance overview</h1></div><div class="refresh-controls"><label>Auto-refresh<select id="auto-refresh"><option value="0">Off</option><option value="30">Every 30 seconds</option><option value="60" selected>Every minute</option><option value="300">Every 5 minutes</option></select></label><button id="refresh" class="button">Refresh</button></div></div>
+        <div class="status-strip"><span class="status-icon">◷</span><span id="freshness">Waiting for probe data</span><span id="refresh-status" class="refresh-status">Waiting for first refresh</span></div>
+        <form id="filters" class="filters">
+          <div class="filter-field"><span>TIME RANGE</span><select name="range" aria-label="Time range" required><option value="3600" selected>Last hour</option><option value="21600">Last 6 hours</option><option value="86400">Last 24 hours</option><option value="604800">Last 7 days</option><option value="2592000">Last 30 days</option></select></div>
+          <div class="filter-field"><span>AGGREGATION</span><select name="period" aria-label="Aggregation" required><option value="600" selected>10 minutes</option><option value="3600">1 hour</option><option value="86400">1 day</option></select></div>
+          <div class="filter-field"><span>REGION</span><select name="region" aria-label="Region" multiple data-all="All regions"></select></div>
+          <div class="filter-field"><span>PROVIDER</span><select name="provider" aria-label="Provider" multiple data-all="All providers"><option>Anthropic</option><option>OpenAI</option></select></div>
+          <div class="filter-field"><span>ENDPOINT</span><select name="endpoint" aria-label="Endpoint" multiple data-all="Both endpoints"><option value="runtime">Runtime</option><option value="mantle">Mantle</option></select></div>
+          <div class="filter-field"><span>INPUT PRESET</span><select name="input_size" aria-label="Input preset" multiple data-all="All presets"><option value="10" selected>10 tokens</option><option value="1">1 token</option><option value="100">100 tokens</option></select></div>
+          <div class="filter-field"><span>API</span><select name="api" aria-label="API" multiple data-all="All APIs"><option value="converse">Converse</option><option value="messages">Messages</option><option value="responses">Responses</option><option value="chat">Chat Completions</option></select></div>
+          <div class="filter-field model-filter"><span>MODEL</span><select name="model" aria-label="Model" multiple data-all="All matching models" data-empty="No matching models"></select></div>
+        </form>
+        <div id="error" class="error" role="alert" hidden></div>
+        <div id="health-summary" class="health-summary" role="status" hidden></div>
+        <div id="coverage-notice" class="notice" role="status" hidden></div>
+        <div class="metric-grid">
+          <article class="metric-card"><div>Time to first token</div><strong id="ttft">—</strong><p>Mean · first visible text</p><div class="metric-accent purple"></div></article>
+          <article class="metric-card"><div>Total response time</div><strong id="ttot">—</strong><p>Mean · complete stream</p><div class="metric-accent blue"></div></article>
+          <article class="metric-card"><div>Output throughput</div><strong id="tps">—</strong><p>Mean · usage tokens × 1,000 / TTOT ms</p><div class="metric-accent green"></div></article>
+          <article class="metric-card"><div>Window success rate</div><strong id="success">—</strong><p id="sample-count">No measurements yet</p><div class="metric-accent orange"></div></article>
+        </div>
+        <div class="insight-panels">
+          <details id="analysis-disclosure" class="insight-disclosure"><summary>Observations &amp; AI analysis <span id="analysis-status" class="badge subtle">Waiting for data</span></summary>
+        <section id="analysis-panel" class="panel observation-panel">
+          <div class="panel-heading"><div><h2>Stability &amp; latency</h2><p>Stability, latency and time changes for the current filters and view.</p></div><div class="analysis-controls"><div class="filter-field"><span>Analysis dimensions</span><select id="analysis-dimension" aria-label="Analysis dimensions" multiple data-required="true"><option value="model_id" selected>Model</option><option value="region">Region</option><option value="provider">Provider</option><option value="endpoint">Endpoint</option><option value="api">API</option></select></div></div></div>
+          <div id="dimension-tabs" class="view-tabs dimension-tabs" aria-label="Selected analysis dimensions"></div>
+          <p id="analysis-scope" class="analysis-scope">Analysis uses completed ten-minute intervals and updates every ten minutes. Probe collection runs every ten minutes.</p>
+          <div class="observation-grid">
+            <article><h3>Statistical observations</h3><ul id="observations"><li>Waiting for statistics in the current view.</li></ul></article>
+            <article class="ai-conclusion"><h3>AI conclusions <span id="analysis-model"></span></h3><div id="ai-text" aria-live="polite">Analysis follows the selected dimensions.</div></article>
+          </div>
+          <details class="analysis-evidence"><summary>Statistical evidence and comparison scope</summary><p id="analysis-comparison"></p><div class="table-scroll"><table><thead><tr><th>GROUP</th><th>COMPLETED</th><th>SUCCESS RATE</th><th>TTFT P95</th><th>TTOT P95</th><th>POLICY RESTRICTIONS</th></tr></thead><tbody id="analysis-groups"></tbody></table></div></details>
+        </section>
+          </details>
+        </div>
+        <div class="chart-grid always-visible-charts" aria-label="Latency and throughput charts">
+          <article class="panel"><div class="panel-heading"><div><h2>First-token latency</h2><p>Mean TTFT by endpoint region</p></div><span class="badge subtle">Milliseconds</span></div><div id="latency-chart" class="chart-empty">Your first measurement will appear here.</div></article>
+          <article class="panel"><div class="panel-heading"><div><h2>Output throughput</h2><p>Mean across successful probes</p></div><span class="badge subtle">Tokens / second</span></div><div id="throughput-chart" class="chart-empty">Select a model to compare regions.</div></article>
+        </div>
+        <article class="panel comparison"><div class="panel-heading"><div><h2>Performance breakdown</h2><p>Selected-window statistics · Latest outcomes and latency alerts in Issues</p></div><span id="series-count" class="badge subtle">0 combinations</span></div>
+          <details class="threshold-help"><summary>Color thresholds &amp; comparison notes</summary><p>TTFT P95: yellow ≥ 5,000 ms, red ≥ 10,000 ms. TTOT P95: yellow ≥ 30,000 ms, red ≥ 60,000 ms. Requires 5 successful samples. Latest failures are red; recovered results are green. Historical failures remain in window statistics. Inputs are combined; configurations stay separate.</p></details>
+          <div class="table-scroll"><table><thead><tr><th>MODEL / ENDPOINT</th><th>REGION / ROUTING</th><th>TTFT P50</th><th>TTFT P95</th><th>TTOT P95</th><th>OUTPUT TOK/S</th><th>WINDOW SUCCESS</th><th>ISSUES</th></tr></thead><tbody id="results"><tr><td colspan="8" class="empty-cell">No probe results in this period.<small>Check the selected model, region, and time range.</small></td></tr></tbody></table></div>
+        </article>
+        <p class="footnote">Time range and aggregation use one selection each; other filters accept multiple values. Model options match the selected regions and providers. An empty categorical filter includes all matching values. Metrics combine the selected input presets; AI trends compare identical inputs and configurations. Regions identify endpoints; profiles may execute elsewhere. Missing measurements are never zero. Color thresholds are observation aids, not SLAs.</p>
+        <details class="panel failures"><summary>Failure history in selected window</summary><div id="failures" class="detail-content">None in this period.</div></details>
+      </section>
+      <section id="management" class="tab" hidden>
+        <div class="page-heading"><div><h1>Probe management</h1><p>Discover current Bedrock models and choose which combinations to probe.</p></div><div class="refresh-controls"><button id="management-reload" class="button">Reload</button><button id="discover-models" class="button primary" disabled>Discover latest</button></div></div>
+        <div id="management-error" class="error" role="alert" hidden></div>
+        <div id="management-message" class="notice" role="status" hidden></div>
+        <div class="management-settings panel"><label><input id="auto-add-models" type="checkbox" disabled> Automatically add newly discovered models</label><span>Claude ≥ 4.8 · GPT ≥ 5.6 · Regional, geographic &amp; global routes</span><span id="management-access"></span></div>
+        <div id="management-summary" class="status-strip">Loading model discovery…</div>
+        <div id="discovery-regions" class="discovery-regions"></div>
+        <form id="management-filters" class="management-filters">
+          <div class="filter-field"><span>SEARCH MODELS</span><input id="management-search" type="search" placeholder="Model name or ID" aria-label="Search models"></div>
+          <div class="filter-field"><span>REGION</span><select name="region" aria-label="Management region" multiple data-all="All regions"></select></div>
+          <div class="filter-field"><span>PROVIDER</span><select name="provider" aria-label="Management provider" multiple data-all="All providers"><option>Anthropic</option><option>OpenAI</option></select></div>
+          <div class="filter-field"><span>ENDPOINT</span><select name="endpoint" aria-label="Management endpoint" multiple data-all="Both endpoints"><option value="runtime">Runtime</option><option value="mantle">Mantle</option></select></div>
+          <div class="filter-field"><span>API</span><select name="api" aria-label="Management API" multiple data-all="All APIs"><option value="converse">Converse</option><option value="messages">Messages</option><option value="responses">Responses</option><option value="chat">Chat Completions</option></select></div>
+          <div class="filter-field"><span>PROBE SELECTION</span><select name="enabled" aria-label="Probe selection" multiple data-all="All selections"><option value="true">Enabled</option><option value="false">Not enabled</option></select></div>
+        </form>
+        <div class="management-actions"><span id="management-selection">0 selected</span><button id="enable-probes" class="button primary" disabled>Add selected to probes</button><button id="pause-probes" class="button" disabled>Pause selected</button><span id="management-schedule">Changes apply to the next ten-minute run; queued probes can finish.</span></div>
+        <article class="panel management-table"><div class="table-scroll"><table><thead><tr><th><input id="select-visible-targets" type="checkbox" aria-label="Select all filtered targets"></th><th>MODEL / PROFILE</th><th>REGION</th><th>ENDPOINT / API</th><th>ROUTING</th><th>PROBE SELECTION</th><th>COLLECTION</th></tr></thead><tbody id="management-results"><tr><td colspan="7" class="empty-cell">Loading discovered models…</td></tr></tbody></table></div></article>
+        <p class="footnote">One target is a model/profile × region × endpoint × API. Each enabled target runs all configured input presets every ten minutes. Discovery confirms availability; successful probes confirm invocation access. New measurements appear in Overview after collection. Pausing keeps historical data. Turning automatic addition off preserves existing selections.</p>
+      </section>
+    </main>
+    <footer><span>BEDROCK PROBE</span><span>Measured from AWS · All times UTC</span></footer>
+  </div>
+  </div>
+  <script type="module" src="/static/app.js"></script>
+</body>
+</html>

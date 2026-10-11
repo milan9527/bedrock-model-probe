@@ -1,0 +1,21 @@
+{
+  "name": "bedrock-probe",
+  "home_region": "us-east-1",
+  "api_region": "us-east-1",
+  "api_architecture": "ARM64",
+  "api_image_tag": "v11",
+  "analysis_model_id": "global.anthropic.claude-haiku-5-5",
+  "analysis_region": "us-east-1",
+  "analysis_max_calls_per_10_minutes": 20,
+  "schedule_enabled": true,
+  "input_sizes": [1, 10, 100],
+  "max_output_tokens": 2048,
+  "anthropic_thinking": "disabled",
+  "fable_global_only": false,
+  "max_targets_per_region": 100,
+  "worker_concurrency": 15,
+  "retention_days": 90,
+  "model_id_regex": "",
+  "apis": ["converse", "messages", "responses", "chat"],
+  "routing_modes": ["regional", "geographic", "global"]
+}

@@ -1,0 +1,26 @@
+.venv/
+__pycache__/
+.pytest_cache/
+.ruff_cache/
+.build/
+node_modules/
+.env
+.env.*
+!.env.example
+*.egg-info/
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+terraform.tfvars
+backend.hcl
+# Local deployment records and credentials must not be published.
+infra/DEPLOYMENT.md
+frontend/config.json
+credentials/
+*.pem
+*.key
+*.p12
+*.pfx
+*.log
+.DS_Store
