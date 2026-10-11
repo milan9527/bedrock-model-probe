@@ -16,6 +16,7 @@ let lastQuery, analysisRequest, analysisKey = "", analysisPoll, analysisRetryAt 
 let activeDimension = "model_id";
 let healthSignature = "";
 let chartSeries = [], chartResize;
+let chartWindow = { start: 0, end: 0, period: 600 };
 const management = initManagement(api, refresh);
 const token = () => sessionStorage.getItem("access_token");
 const base64url = (bytes) => btoa(String.fromCharCode(...bytes)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
@@ -122,10 +123,16 @@ function renderDimensionTabs() {
 }
 
 function chart(id, series, metric) {
+  const element = $(id);
+  const { start, end, period } = chartWindow;
+  const label = metric === "ttft_ms" ? "TTFT" : "Output throughput";
+  const unit = metric === "ttft_ms" ? "ms" : "tok/s";
+  const bucketLabel = { 600: "10-minute", 3600: "Hourly", 86400: "Daily" }[period] || `${period / 60}-minute`;
+  $(`${id}-scope`).textContent = `${bucketLabel} means by region · UTC · Selected models and APIs combined`;
   const groups = new Map();
   for (const row of series) {
     const value = row[metric];
-    if (!value?.n) continue;
+    if (!value?.n || !Number.isFinite(value.mean)) continue;
     const key = `${row.region}/${row.timestamp}`;
     const previous = groups.get(key) || { region: row.region, time: row.timestamp, sum: 0, n: 0 };
     previous.sum += value.mean * value.n;
@@ -133,7 +140,6 @@ function chart(id, series, metric) {
     groups.set(key, previous);
   }
   const points = [...groups.values()].map(p => ({ ...p, value: p.sum / p.n }));
-  const element = $(id);
   if (!points.length) {
     element.className = "chart-empty";
     element.textContent = "No successful measurements in this period.";
@@ -141,24 +147,78 @@ function chart(id, series, metric) {
   }
   element.className = "chart";
   const containerWidth = element.clientWidth || (innerWidth > 720 ? (innerWidth - 44) / 2 : innerWidth - 22);
-  const width = Math.max(260, containerWidth - 16), height = 125, left = 42, right = 15, top = 12, bottom = 27;
-  const times = points.map(p => p.time), min = Math.min(...times), max = Math.max(...times);
+  const width = Math.max(260, containerWidth - 16), height = 156, left = 48, right = 12, top = 12, bottom = 28;
+  const min = Math.floor(start / period) * period, max = Math.max(end, min + 1);
   const ceiling = Math.max(...points.map(p => p.value), 1) * 1.15;
-  const x = t => left + (max === min ? .5 : (t - min) / (max - min)) * (width - left - right);
+  const x = t => left + (t - min) / (max - min) * (width - left - right);
   const y = v => height - bottom - v / ceiling * (height - top - bottom);
-  const activeRegions = [...new Set(points.map(p => p.region))];
-  let svg = `<svg viewBox="0 0 ${width} ${height}" role="img" aria-label="${metric === "ttft_ms" ? "First-token latency" : "Output throughput"} by region">`;
+  const activeRegions = Object.keys(regions).filter(region => points.some(point => point.region === region));
+  const color = region => colors[Object.keys(regions).indexOf(region) % colors.length];
+  let svg = `<svg viewBox="0 0 ${width} ${height}" role="img" tabindex="0"
+    aria-label="${label} time series in ${unit}. Use Left and Right arrow keys to inspect time buckets."
+    aria-describedby="${id}-scope" data-period="${period}" data-start="${min}" data-end="${max}">`;
   for (let i = 0; i <= 4; i++) {
     const value = ceiling * i / 4;
-    svg += `<line x1="${left}" x2="${width-right}" y1="${y(value)}" y2="${y(value)}" stroke="#eff1f6"/><text x="${left-8}" y="${y(value)+3}" text-anchor="end">${format(value)}</text>`;
+    svg += `<line x1="${left}" x2="${width-right}" y1="${y(value)}" y2="${y(value)}" stroke="#eff1f6"/><text x="${left-7}" y="${y(value)+3}" text-anchor="end">${format(value, ceiling < 10 ? 1 : 0)}</text>`;
   }
-  for (const [i, region] of activeRegions.entries()) {
+  const ticks = width < 450 ? 2 : 4;
+  for (let i = 0; i <= ticks; i++) {
+    const time = min + (max - min) * i / ticks;
+    svg += `<text class="chart-time-tick" x="${x(time)}" y="${height-7}" text-anchor="${i === 0 ? "start" : i === ticks ? "end" : "middle"}">${utc(time).slice(5,16)}</text>`;
+  }
+  for (const region of activeRegions) {
     const regional = points.filter(p => p.region === region).sort((a,b) => a.time-b.time);
-    // Individual points avoid implying measurements in missing buckets.
-    svg += regional.map(p => `<circle cx="${x(p.time)}" cy="${y(p.value)}" r="3.2" fill="${colors[i%colors.length]}"><title>${escape(regions[region])}: ${format(p.value,1)} · ${utc(p.time)}</title></circle>`).join("");
+    // Connect only consecutive buckets. Failed or missing buckets never become zeros.
+    const path = regional.map((p, i) =>
+      `${i && p.time - regional[i-1].time === period ? "L" : "M"}${x(p.time)},${y(p.value)}`).join(" ");
+    svg += `<path class="chart-series-line" data-region="${escape(region)}" d="${path}" fill="none"
+      stroke="${color(region)}" stroke-width="1.8" stroke-linejoin="round"/>`;
+    svg += regional.map(p => `<circle cx="${x(p.time)}" cy="${y(p.value)}" r="2.6" fill="${color(region)}">
+      <title>${escape(regions[region])}: ${format(p.value,1)} ${unit} · ${utc(p.time)} · ${format(p.n)} measurements</title></circle>`).join("");
   }
-  svg += `<text x="${left}" y="${height-5}">${utc(min).slice(5,16)}</text><text x="${width-right}" y="${height-5}" text-anchor="end">${utc(max).slice(5,16)}</text></svg>`;
-  element.innerHTML = svg + `<div class="legend">${activeRegions.map((r,i) => `<span><i style="background:${colors[i%colors.length]}"></i>${escape(regions[r])}</span>`).join("")}</div>`;
+  svg += `<line class="chart-cursor" x1="${left}" x2="${left}" y1="${top}" y2="${height-bottom}" hidden/></svg>`;
+  element.innerHTML = svg + `<div class="chart-tooltip" role="status" hidden></div><div class="legend">${activeRegions.map(r => `<span><i style="background:${color(r)}"></i>${escape(regions[r])}</span>`).join("")}</div>`;
+  const plot = element.querySelector("svg"), tooltip = element.querySelector(".chart-tooltip");
+  const cursor = element.querySelector(".chart-cursor");
+  let inspected = min;
+  const inspect = time => {
+    const bucket = Math.max(min, Math.min(Math.floor((max - 1) / period) * period, Math.floor(time / period) * period));
+    if (bucket === inspected && !tooltip.hidden) return;
+    inspected = bucket;
+    const rows = activeRegions.map(region => {
+      const point = groups.get(`${region}/${inspected}`);
+      return `<div><span><i style="background:${color(region)}"></i>${escape(regions[region])}</span><strong>${
+        point ? `${format(point.sum / point.n, 1)} ${unit}` : "No measurements"
+      }</strong>${point ? `<small>${format(point.n)} samples</small>` : ""}</div>`;
+    }).join("");
+    const partial = inspected < start || inspected + period > end;
+    tooltip.innerHTML = `<strong>${utc(inspected)}${partial ? " · Partial bucket" : ""}</strong>${rows}`;
+    tooltip.hidden = false;
+    cursor.removeAttribute("hidden");
+    cursor.setAttribute("x1", x(inspected));
+    cursor.setAttribute("x2", x(inspected));
+    const position = x(inspected) / width * plot.clientWidth;
+    tooltip.style.left = `${Math.max(0, Math.min(position + 12, element.clientWidth - tooltip.offsetWidth - 8))}px`;
+  };
+  const hide = () => { tooltip.hidden = true; cursor.setAttribute("hidden", ""); };
+  const inspectPointer = event => {
+    const rect = plot.getBoundingClientRect();
+    const position = (event.clientX - rect.left) / rect.width * width;
+    if (position < left || position > width - right) return hide();
+    inspect(min + (position - left) / (width - left - right) * (max - min));
+  };
+  plot.addEventListener("pointermove", inspectPointer);
+  plot.addEventListener("pointerdown", inspectPointer);
+  plot.addEventListener("pointerleave", event => { if (event.pointerType !== "touch") hide(); });
+  plot.addEventListener("focus", () => inspect(inspected));
+  plot.addEventListener("blur", hide);
+  plot.addEventListener("keydown", event => {
+    if (!["ArrowLeft", "ArrowRight", "Home", "End", "Escape"].includes(event.key)) return;
+    event.preventDefault();
+    if (event.key === "Escape") return hide();
+    inspect(event.key === "Home" ? min : event.key === "End" ? max - 1
+      : inspected + (event.key === "ArrowLeft" ? -period : period));
+  });
 }
 
 const failureLabels = {
@@ -298,6 +358,7 @@ function render(data) {
   $("coverage-notice").textContent = notices.join(" ");
   $("coverage-notice").hidden = notices.length === 0;
   chartSeries = data.series;
+  chartWindow = { start: data.start, end: data.end, period: data.period };
   renderCharts();
   $("results").innerHTML = data.summary.length ? data.summary.sort((a,b) => a.model_id.localeCompare(b.model_id) || a.region.localeCompare(b.region)).map(tableRow).join("")
     : `<tr><td colspan="8" class="empty-cell">No probe results match these filters.<small>Check enabled probes in Management or choose another time range.</small></td></tr>`;

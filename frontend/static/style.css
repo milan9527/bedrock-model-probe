@@ -30,3 +30,16 @@ main{max-width:1710px;margin:auto;padding:40px 42px 24px}.page-heading{display:f
 @media(min-width:1151px){.comparison .table-scroll{max-height:max(280px,calc(100dvh - 565px))}}
 
 .filters select:not([multiple]){height:29px;padding:5px 8px;font-size:10px;border-radius:4px;font-weight:400;letter-spacing:0}
+
+/* Time-series charts retain visible gaps and support pointer/keyboard inspection. */
+.always-visible-charts .chart{position:relative;height:auto;min-height:182px;padding-bottom:7px}
+.always-visible-charts .chart svg{height:156px;display:block;outline-offset:-2px}
+.chart svg:focus-visible{outline:2px solid #b6a3eb;border-radius:4px}
+.chart-cursor{stroke:#8593a8;stroke-width:1;stroke-dasharray:3 3;pointer-events:none}
+.chart-tooltip{position:absolute;top:5px;z-index:5;max-width:calc(100% - 8px);padding:8px 10px;background:#fff;border:1px solid #dfe4ec;border-radius:5px;box-shadow:0 3px 12px #18223420;color:#4c5566;font-size:10px;pointer-events:none}
+.chart-tooltip>strong{display:block;font-size:9px;margin-bottom:6px;color:#6a7689}
+.chart-tooltip>div{display:flex;align-items:center;gap:10px;line-height:1.8}
+.chart-tooltip>div>span{margin-right:auto}
+.chart-tooltip i{display:inline-block;width:6px;height:6px;border-radius:50%;margin-right:5px}
+.chart-tooltip small{font-size:8px;color:#7c8796}
+.always-visible-charts .legend i{width:12px;height:2px;border-radius:0;vertical-align:middle}

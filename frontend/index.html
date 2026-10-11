@@ -63,8 +63,8 @@
           </details>
         </div>
         <div class="chart-grid always-visible-charts" aria-label="Latency and throughput charts">
-          <article class="panel"><div class="panel-heading"><div><h2>First-token latency</h2><p>Mean TTFT by endpoint region</p></div><span class="badge subtle">Milliseconds</span></div><div id="latency-chart" class="chart-empty">Your first measurement will appear here.</div></article>
-          <article class="panel"><div class="panel-heading"><div><h2>Output throughput</h2><p>Mean across successful probes</p></div><span class="badge subtle">Tokens / second</span></div><div id="throughput-chart" class="chart-empty">Select a model to compare regions.</div></article>
+          <article class="panel"><div class="panel-heading"><div><h2>TTFT over time</h2><p id="latency-chart-scope">Mean by endpoint region · UTC</p></div><span class="badge subtle">ms</span></div><div id="latency-chart" class="chart-empty">Your first measurement will appear here.</div></article>
+          <article class="panel"><div class="panel-heading"><div><h2>Throughput over time</h2><p id="throughput-chart-scope">Mean by endpoint region · UTC</p></div><span class="badge subtle">tok/s</span></div><div id="throughput-chart" class="chart-empty">Your first measurement will appear here.</div></article>
         </div>
         <article class="panel comparison"><div class="panel-heading"><div><h2>Performance breakdown</h2><p>Selected-window statistics · Latest outcomes and latency alerts in Issues</p></div><span id="series-count" class="badge subtle">0 combinations</span></div>
           <details class="threshold-help"><summary>Color thresholds &amp; comparison notes</summary><p>TTFT P95: yellow ≥ 5,000 ms, red ≥ 10,000 ms. TTOT P95: yellow ≥ 30,000 ms, red ≥ 60,000 ms. Requires 5 successful samples. Latest failures are red; recovered results are green. Historical failures remain in window statistics. Inputs are combined; configurations stay separate.</p></details>

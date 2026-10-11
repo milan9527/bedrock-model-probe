@@ -184,6 +184,16 @@ Methodology pages have been removed. Overview uses a full-width table with stick
 headers, compact filters/cards, a separate Issues column, permanently visible
 latency and throughput charts, and expandable AI and threshold panels. Measurement definitions remain in this README.
 
+The always-visible TTFT and throughput time-series charts follow the selected
+time range, aggregation period, and categorical filters. Each region has a
+consistent color. Points show sample-weighted means across the matching models
+and APIs, in ms and tokens/s respectively; select individual models or APIs for
+a narrower comparison. Lines connect consecutive measured buckets and break
+across missing or unsuccessful buckets. The UTC axis covers the selected window,
+including the first aggregation bucket. Hover, tap, or use Left/Right arrow keys
+on a focused chart to inspect bucket values and sample counts. Partial buckets
+are identified in the tooltip.
+
 Management lists the models and inference profiles actually returned by Bedrock
 in the six active regions. Search and multi-select filters narrow the regional
 model/API targets. Select rows and choose **Add selected to probes** or
