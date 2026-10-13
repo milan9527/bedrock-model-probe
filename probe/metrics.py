@@ -183,6 +183,7 @@ def aggregate(samples: list[dict], period: int, combine_inputs=False, active_tar
                 latest_health=latest_health(rows, active_targets, configurations),
                 max_output=rows[0].get("max_output"),
                 reasoning=rows[0].get("reasoning", "model-default"),
+                prompt_version=rows[0].get("prompt_version", "repeat-v1"),
                 input_sizes=sorted({r["input_size"] for r in rows if r.get("input_size") is not None}),
                 status_counts=dict(Counter(r["status"] for r in rows)),
                 failure_counts=dict(Counter(failure_reason(r) for r in failed)),

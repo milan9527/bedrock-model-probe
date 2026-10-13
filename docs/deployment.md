@@ -26,7 +26,8 @@ Review `infra/config.json` before deployment:
 | `api_region` | ECS API and internal load balancer region |
 | `api_image_tag` | Immutable ECR image tag to deploy |
 | `api_architecture` | `ARM64` or `X86_64` for the API image |
-| `schedule_enabled` | Enable or pause regional ten-minute schedules |
+| `schedule_enabled` | Enable or pause regional schedules |
+| `schedule_seconds` | `3600` for hourly collection (default); `600` for legacy ten-minute collection |
 | `input_sizes` | Scheduled presets: a subset of `1`, `10`, and `100` |
 | `max_output_tokens` | Per-request output budget |
 | `worker_concurrency` | Probe worker concurrency in each region |
@@ -39,7 +40,7 @@ Review `infra/config.json` before deployment:
 
 The region list is defined in `probe/config.py`. With schedules enabled, each
 selected target and input preset produces one real inference request per
-ten-minute cycle. See the README for capacity and cost calculations.
+collection cycle. The default is hourly with only the 10-token preset and a 64-word response target. See the README for capacity and cost calculations.
 
 ## Install and deploy
 

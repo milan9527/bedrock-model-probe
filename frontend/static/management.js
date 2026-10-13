@@ -37,7 +37,7 @@ export function initManagement(api, changed) {
   function renderRows() {
     $("management-results").innerHTML = visible().map(t => {
       const snapshot = data.regions[t.region].schedule;
-      const fresh = snapshot.scheduled_at && Date.now() / 1000 - snapshot.scheduled_at <= 1200;
+      const fresh = snapshot.scheduled_at && Date.now() / 1000 - snapshot.scheduled_at <= 2 * (data.schedule_seconds || 3600);
       const applied = fresh && Number(snapshot.policy_revision) === Number(data.policy.revision);
       const collection = !fresh ? "Schedule not current"
         : !applied ? "Awaiting next schedule"

@@ -15,6 +15,7 @@ from probe.selection import default_policy
     ({"scheduled_time": "1970-01-01T00:10:00Z"}, 600, "scheduler"),
 ])
 def test_scheduler_delivery_creates_correctly_aligned_jobs(monkeypatch, event, expected_slot, source):
+    monkeypatch.setenv("PROBE_INTERVAL_SECONDS", "600")
     monkeypatch.setenv("AWS_REGION", "us-east-1")
     monkeypatch.setenv("QUEUE_URL", "https://example.invalid/jobs")
     monkeypatch.setenv("INPUT_SIZES", "[1,10,100]")
@@ -34,6 +35,42 @@ def test_scheduler_delivery_creates_correctly_aligned_jobs(monkeypatch, event, e
     assert {job["scheduled_at"] for job in sent} == {expected_slot}
     assert {job["schedule_time_source"] for job in sent} == {source}
     assert store.catalog.call_args.args[1]["enqueued_jobs"] == 3
+
+
+@pytest.mark.parametrize("event", [{}, {"scheduled_time": "<aws.scheduler.scheduled-time>"},
+                                   {"scheduled_time": "1970-01-01T01:00:00Z"}])
+def test_hourly_plan_uses_one_input_and_deduplicates_within_hour(monkeypatch, event):
+    monkeypatch.setenv("AWS_REGION", "us-east-1")
+    monkeypatch.setenv("QUEUE_URL", "https://example.invalid/jobs")
+    monkeypatch.setenv("PROBE_INTERVAL_SECONDS", "3600")
+    monkeypatch.delenv("INPUT_SIZES", raising=False)
+    monkeypatch.setattr(jobs.time, "time", lambda: 3915)
+    targets = target_apis("us-east-1", "openai.gpt-6-astra", "mantle", "regional")
+    monkeypatch.setattr(jobs, "discover", lambda region: (targets, []))
+    store, sqs = Mock(), Mock()
+    store.policy.return_value = default_policy()
+    sqs.send_message_batch.return_value = {}
+    monkeypatch.setattr(jobs, "Store", lambda: store)
+    monkeypatch.setattr(jobs.boto3, "client", lambda *args, **kwargs: sqs)
+    assert jobs.planner(event, None)["jobs"] == 2
+    first = [json.loads(e["MessageBody"]) for e in sqs.send_message_batch.call_args.kwargs["Entries"]]
+    assert {job["input_size"] for job in first} == {10}
+    assert {job["scheduled_at"] for job in first} == {3600}
+    assert {job["schedule_seconds"] for job in first} == {3600}
+    assert {job["prompt_version"] for job in first} == {"short-64-v2"}
+    monkeypatch.setattr(jobs.time, "time", lambda: 4015)
+    jobs.planner(event, None)
+    second = [json.loads(e["MessageBody"]) for e in sqs.send_message_batch.call_args.kwargs["Entries"]]
+    assert {job["job_id"] for job in first} == {job["job_id"] for job in second}
+
+
+def test_prompt_change_has_a_separate_measurement_configuration(monkeypatch):
+    target = target_apis("us-east-1", "openai.gpt-6-astra", "mantle", "regional")[0]
+    short = jobs.make_job(target, 10, 3600, 2048)
+    monkeypatch.setattr(jobs, "PROMPT_VERSION", "repeat-v1")
+    old = jobs.make_job(target, 10, 3600, 2048)
+    assert short["config_id"] != old["config_id"]
+    assert short["job_id"] != old["job_id"]
 
 
 @pytest.mark.parametrize("model", [

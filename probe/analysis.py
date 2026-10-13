@@ -13,7 +13,7 @@ from botocore.exceptions import ClientError
 from probe.config import REGIONS
 from probe.metrics import DIMENSIONS, failure_reason, latest_health, percentile
 
-ANALYSIS_VERSION = "observations-en-ms-v6-recovery"
+ANALYSIS_VERSION = "observations-en-ms-v7-hourly"
 ANALYSIS_DIMENSIONS = ("model_id", "region", "provider", "endpoint", "api")
 DEFAULT_ANALYSIS_MODEL = "global.anthropic.claude-haiku-5-5"
 THRESHOLDS = {
@@ -91,16 +91,21 @@ def build_evidence(rows, start, end, period, dimension, filters, current_health=
             jitter.append({**identity, "samples": current["ttft_ms"]["n"],
                            "ttft_p50_ms": median, "ttft_p95_ms": tail,
                            "tail_ratio": round(tail / median, 2)})
-        slots = {int(r["scheduled_at"]) // 600 for r in samples}
-        if slots:
-            # Only gaps between observed attempts are inferred, not time before discovery.
-            missing_slots += max(slots) - min(slots) + 1 - len(slots)
+        # Legacy samples ran every ten minutes. New jobs carry their own cadence.
+        for cadence in {int(r.get("schedule_seconds", 600)) for r in samples}:
+            slots = {int(r["scheduled_at"]) // cadence for r in samples
+                     if int(r.get("schedule_seconds", 600)) == cadence}
+            if slots:
+                # Only gaps between observed attempts are inferred, not time before discovery.
+                missing_slots += max(slots) - min(slots) + 1 - len(slots)
     comparisons.sort(key=lambda r: max(
         abs(r["ttft_p50_change_pct"] or 0), abs(r["success_change_pp"]) * 5), reverse=True)
     groups = [{"name": name, **stats(samples)} for name, samples in grouped.items()]
     groups.sort(key=lambda r: (r["failures"], r["ttft_ms"]["p95"] or 0), reverse=True)
     last = max((r["scheduled_at"] for r in rows), default=None)
     budgets = sorted({r["max_output"] for r in rows if r.get("max_output")})
+    prompt_versions = sorted({r.get("prompt_version", "repeat-v1") for r in rows})
+    covered_until = max((r["scheduled_at"] + r.get("schedule_seconds", 600) for r in rows), default=end)
     notes = []
     if not rows:
         notes.append("No data matches these filters in completed sampling intervals; stability and latency cannot be assessed.")
@@ -123,6 +128,9 @@ def build_evidence(rows, start, end, period, dimension, filters, current_health=
                          "gaps count as neither successes nor model failures.")
         if len(budgets) > 1:
             notes.append("This window includes different output budgets; trends compare identical configurations only.")
+        if len(prompt_versions) > 1:
+            notes.append("This window includes story and short-response prompts. Shorter output changes TTOT and throughput; "
+                         "trends compare identical prompt configurations only.")
         if any(len(settings) > 1 for settings in reasoning_by_target.values()):
             notes.append("Reasoning settings changed within this window. Historical and current configurations remain separate.")
         if not comparisons:
@@ -141,9 +149,9 @@ def build_evidence(rows, start, end, period, dimension, filters, current_health=
                      for bucket, samples in sorted(buckets.items())[-24:]],
         "timeline_period_count": len(buckets),
         "coverage": {"last_observed_utc": iso(last) if last is not None else None,
-                     "gap_to_window_end_ms": max(0, end - last - 600) * 1000 if last is not None else None,
+                     "gap_to_window_end_ms": max(0, end - covered_until) * 1000 if last is not None else None,
                      "internal_missing_slots": missing_slots, "observed_cohorts": len(cohorts)},
-        "output_budgets": budgets, "observations": notes, "thresholds": THRESHOLDS,
+        "output_budgets": budgets, "prompt_versions": prompt_versions, "observations": notes, "thresholds": THRESHOLDS,
     }
 
 

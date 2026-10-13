@@ -61,6 +61,24 @@ def test_gaps_only_cover_observed_span_and_exclude_manual_verification():
     assert evidence["coverage"]["gap_to_window_end_ms"] == 600000
 
 
+def test_hourly_samples_do_not_create_ten_minute_gaps():
+    rows = [sample(slot, schedule_seconds=3600, prompt_version="short-64-v2") for slot in (0, 3600, 7200)]
+    evidence = analysis.build_evidence(rows, 0, 10800, 3600, "region", {})
+    assert evidence["coverage"]["internal_missing_slots"] == 0
+    assert evidence["coverage"]["gap_to_window_end_ms"] == 0
+    missing = analysis.build_evidence([rows[0], rows[2]], 0, 10800, 3600, "region", {})
+    assert missing["coverage"]["internal_missing_slots"] == 1
+
+
+def test_story_and_short_response_samples_are_not_paired_as_performance_trends():
+    rows = [sample(i * 3600, config_id="old" if i < 3 else "short",
+                   prompt_version="repeat-v1" if i < 3 else "short-64-v2", schedule_seconds=3600)
+            for i in range(6)]
+    evidence = analysis.build_evidence(rows, 0, 21600, 3600, "region", {})
+    assert not evidence["comparisons"]
+    assert any("story and short-response" in note for note in evidence["observations"])
+
+
 def test_no_data_does_not_report_stability_or_invoke_model(monkeypatch):
     store = Mock()
     store.table.get_item.return_value = {}

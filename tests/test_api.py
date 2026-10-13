@@ -14,6 +14,36 @@ def test_api_requires_login_by_default(monkeypatch):
         assert client.get("/api/analysis?start=0&end=3600").status_code == 401
 
 
+def test_hourly_configuration_and_analysis_boundaries(monkeypatch):
+    monkeypatch.setenv("LOCAL_DEV", "1")
+    monkeypatch.setenv("TABLE_NAME", "test")
+    monkeypatch.setenv("PROBE_INTERVAL_SECONDS", "3600")
+    monkeypatch.setenv("INPUT_SIZES", "[10]")
+    monkeypatch.setattr(api_module.time, "time", lambda: 27000)
+    store = Mock()
+    store.samples.return_value = []
+    monkeypatch.setattr(api_module, "Store", lambda: store)
+    cached = Mock(return_value={"status": "ready"})
+    monkeypatch.setattr(api_module, "cached_analysis", cached)
+    with TestClient(app) as client:
+        config = client.get("/api/config").json()
+        assert config["schedule_seconds"] == 3600
+        assert config["scheduled_input_sizes"] == [10]
+        assert config["input_sizes"] == [1, 10, 100]  # Historical filters remain available.
+        assert client.get("/api/analysis?start=5400&end=27000&period=3600").status_code == 200
+    assert cached.call_args.args[1:3] == (3600, 25200)
+
+
+def test_hourly_catalog_does_not_become_stale_between_runs(monkeypatch):
+    monkeypatch.setenv("PROBE_INTERVAL_SECONDS", "3600")
+    monkeypatch.setattr(api_module.time, "time", lambda: 7000)
+    store = Mock()
+    store.catalog.return_value = {"scheduled_at": 3600, "targets": []}
+    assert api_module.active_targets(store, ["us-east-1"]) == set()
+    monkeypatch.setattr(api_module.time, "time", lambda: 11000)
+    assert api_module.active_targets(store, ["us-east-1"]) is None
+
+
 def test_local_preview_never_fabricates_measurements(monkeypatch):
     monkeypatch.setenv("LOCAL_DEV", "1")
     monkeypatch.delenv("TABLE_NAME", raising=False)

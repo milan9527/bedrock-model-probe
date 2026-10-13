@@ -1,3 +1,4 @@
+import json
 import os
 import time
 
@@ -7,7 +8,7 @@ from fastapi.staticfiles import StaticFiles
 
 from probe.analysis import ANALYSIS_DIMENSIONS, THRESHOLDS, build_evidence, cached_analysis
 from probe.auth import authorize
-from probe.config import REGIONS
+from probe.config import PROMPT_VERSION, REGIONS, probe_interval_seconds
 from probe.management import router as management_router
 from probe.metrics import TARGET_DIMENSIONS, aggregate, latest_health
 from probe.storage import Store
@@ -23,7 +24,9 @@ def health():
 
 @app.get("/api/config", dependencies=[Depends(authorize)])
 def config():
-    return {"regions": REGIONS, "input_sizes": [1, 10, 100], "schedule_seconds": 600,
+    return {"regions": REGIONS, "input_sizes": [1, 10, 100],
+            "scheduled_input_sizes": json.loads(os.getenv("INPUT_SIZES", "[10]")),
+            "schedule_seconds": probe_interval_seconds(), "prompt_version": PROMPT_VERSION,
             "max_range_days": 31, "max_samples": 100000, "anomaly_thresholds": THRESHOLDS}
 
 
@@ -75,7 +78,7 @@ def active_targets(store, regions):
         snapshot = store.catalog(region)
         # A missing, stale or partial discovery cannot establish that a target was retired.
         if (not isinstance(snapshot, dict) or "targets" not in snapshot or snapshot.get("issues")
-                or time.time() - snapshot.get("scheduled_at", 0) > 1200):
+                or time.time() - snapshot.get("scheduled_at", 0) > 2 * probe_interval_seconds()):
             return None
         targets.update(tuple(target.get(key) for key in TARGET_DIMENSIONS) for target in snapshot["targets"])
     return targets
@@ -126,7 +129,8 @@ def analysis(
         raise HTTPException(400, "Unknown analysis dimension")
     span = end - start
     requested_end = min(end, int(time.time()))
-    end = requested_end // 600 * 600
+    interval = probe_interval_seconds()
+    end = requested_end // interval * interval
     start = max(0, end - span)
     filters = selection_filters(provider, endpoint, model, api, input_size)
     scope = {**filters, "region": sorted(set(region)) if region else None}

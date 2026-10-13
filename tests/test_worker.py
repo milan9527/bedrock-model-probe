@@ -75,3 +75,23 @@ def test_worker_honors_queued_reasoning_configuration(monkeypatch, reasoning):
     assert result == {"batchItemFailures": []}
     assert probe.call_args.kwargs["reasoning"] == reasoning
     assert store.finish.call_args.args[0]["config_id"] == job["config_id"]
+
+
+@pytest.mark.parametrize("version", ["repeat-v1", "short-64-v2", None])
+def test_worker_uses_the_queued_prompt_version(monkeypatch, version):
+    job = sample_job()
+    if version is None:
+        job.pop("prompt_version")
+    else:
+        job["prompt_version"] = version
+    store = Mock()
+    store.claim.return_value = True
+    monkeypatch.setenv("AWS_REGION", "us-east-1")
+    monkeypatch.setattr(jobs, "Store", lambda: store)
+    monkeypatch.setattr(jobs.time, "time", lambda: 620)
+    probe = Mock(return_value={"status": "ok"})
+    monkeypatch.setattr(jobs, "run", probe)
+    assert jobs.worker({"Records": [{"body": json.dumps(job), "messageId": "1"}]}, None) == {"batchItemFailures": []}
+    expected = ("Reply in exactly 64 words about cloud computing." if version == "short-64-v2"
+                else "Write a story about a journey through outer space.")
+    assert probe.call_args.args[1] == expected

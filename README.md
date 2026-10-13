@@ -1,6 +1,6 @@
 # Bedrock Probe
 
-A regional streaming benchmark for Amazon Bedrock with a static dashboard, an ECS API, and Lambda probes every ten minutes. Infrastructure is deployed directly with **AWS CLI/Boto3**, using the existing default VPC in each region. No Terraform or CloudFormation is required.
+A regional streaming benchmark for Amazon Bedrock with a static dashboard, an ECS API, and hourly Lambda probes. Infrastructure is deployed directly with **AWS CLI/Boto3**, using the existing default VPC in each region. No Terraform or CloudFormation is required.
 
 The implementation includes a compact performance dashboard, model discovery and probe management, four streaming API adapters, failure reporting, raw-sample storage, exact percentile aggregation, automatic dashboard refresh, anomaly highlighting, Bedrock AI observations, and Cognito sign-in. See [the deployment guide](docs/deployment.md) for account setup and operation.
 
@@ -18,7 +18,7 @@ flowchart LR
     ECS --> DB[(DynamoDB)]
     ECS --> AI[Bedrock / statistical commentary]
     subgraph Six regional deployments
-      TIMER[EventBridge Scheduler / 10 min] --> PLAN[Discovery / Lambda]
+      TIMER[EventBridge Scheduler / hourly] --> PLAN[Discovery / Lambda]
       PLAN --> Q[SQS]
       Q --> WORK[Probe / Lambda]
       WORK --> RT[Bedrock runtime]
@@ -47,7 +47,7 @@ queries for other regions.
 
 ## Model and API coverage
 
-Discovery runs every ten minutes and selects **Claude ≥ 4.8** and **GPT ≥ 5.6**, including Claude 5.5 and GPT 6 families. New matching versions are automatically included, subject to `max_targets_per_region`. Discovery uses regional `ListFoundationModels`, `ListInferenceProfiles`, and Mantle's Models API. An empty catalog or failed discovery stays visible.
+Discovery runs hourly and selects **Claude ≥ 4.8** and **GPT ≥ 5.6**, including Claude 5.5 and GPT 6 families. New matching versions are automatically included, subject to `max_targets_per_region`. Discovery uses regional `ListFoundationModels`, `ListInferenceProfiles`, and Mantle's Models API. An empty catalog or failed discovery stays visible.
 
 These official AWS model cards were checked while building this implementation:
 
@@ -110,9 +110,9 @@ cards, result tables, issue descriptions, thresholds, statistical evidence, and
 AI conclusions. Throughput remains tokens/s. UTC timestamps, schedule intervals
 and time-range selectors retain their normal calendar/cadence units.
 
-Input selectors are **literal 1, 10, and 100 tokens, not thousands**, measured on prompt text using the `cl100k_base` reference tokenizer. Every model receives the same text for a given preset. Actual model tokenization and message framing can differ; actual usage remains available in the API, but is omitted from the results table. Exactly one billed input token is generally impossible for a chat request.
+Historical input filters support **literal 1, 10, and 100 tokens, not thousands**, measured on prompt text using the `cl100k_base` reference tokenizer. Every model receives the same text for a given preset. Actual model tokenization and message framing can differ; actual usage remains available in the API, but is omitted from the results table. Exactly one billed input token is generally impossible for a chat request.
 
-The ten-token prompt is “Write a story about a journey through outer space.” The 100-token prompt repeats it ten times; the one-token prompt is “Hello.” The preset tests verify these reference counts. Because the one-token prompt cannot include a length instruction, its output may be short. Compare each input size independently.
+The active ten-token prompt is “Reply in exactly 64 words about cloud computing.” It requests a controlled short response instead of a story. Only the ten-token preset is scheduled by default. The optional 100-token preset repeats the instruction ten times; the one-token preset remains “Hello.” Preset tests verify the reference counts. `short-64-v2` identifies the new prompt; queued `repeat-v1` jobs retain their original story text. Prompt version and collection cadence are included in the configuration identity, so AI trends never pair old story prompts with new short responses. Historical records remain available. Shorter responses change TTOT and usage-based throughput, so a lower TTOT after this change does not itself establish faster model performance.
 
 The current default output cap is **2,048 tokens**, including any reasoning tokens. Earlier 512-token runs often exhausted their budget before Claude Opus 5/5.5 or GPT-6 Sol returned visible text. **Opus 5 and Haiku 5.5 probes disable optional thinking** to avoid reasoning-only responses. Other model versions retain model-default reasoning; Opus 5.5, Sonnet 5.5 and Fable require adaptive thinking and reject disabling it. New models keep their defaults until their reasoning controls have been verified. `anthropic_thinking` can be `disabled` or `model-default` and applies only to the two verified opt-out models. Historical reasoning settings and output budgets remain separate configurations, and queued jobs retain their original settings during deployment. Requests do not assume universally supported temperature controls. Identical prompts may benefit from implicit provider caching. This is a repeated-request benchmark, not a guaranteed cold-cache benchmark.
 
@@ -120,8 +120,8 @@ Each adapter creates a fresh connection per probe. TTFT therefore includes DNS/T
 
 ## Scheduling and failure handling
 
-- Each target is one region × model/inference profile × endpoint × API. Each selected input size produces one job per ten-minute slot. UTC cron scheduling aligns all regions to minutes 00, 10, 20, 30, 40, and 50.
-- If Scheduler leaves its scheduled-time context token unexpanded, the planner uses the invocation's current ten-minute UTC slot and records `schedule_time_source=invocation` on the catalog and jobs. A valid supplied scheduled time remains authoritative.
+- Each target is one region × model/inference profile × endpoint × API. The cost-saving default produces one job per target per hour using the 10-token input preset. UTC cron scheduling aligns all regions to minute 00. `schedule_seconds` supports 3600 (hourly) or 600 (legacy ten-minute collection).
+- If Scheduler leaves its scheduled-time context token unexpanded, the planner uses the invocation's current configured UTC slot and records `schedule_time_source=invocation` on the catalog and jobs. A valid supplied scheduled time remains authoritative.
 - SQS fans out jobs with configurable worker concurrency, currently 15 per region. One Lambda handles one request with a 120-second deadline and a 150-second Lambda timeout.
 - Inference SDK retries are disabled. A measured failure remains a failure.
 - Conditional DynamoDB claims deduplicate SQS delivery. If a worker dies after claiming, a later delivery records `worker_timeout` rather than making a second potentially billable inference request. A storage failure after successful inference can therefore lose that measurement; the code favors avoiding duplicate inference.
@@ -153,7 +153,7 @@ This command discovers models; it does not invoke them.
 
 ## AWS CLI / Boto3 deployment
 
-Deployment configuration is in `infra/config.json`. The deployment uses each region's existing default VPC and fails explicitly if one is missing. It reuses existing NAT routes where available and adds application-specific private subnets and NAT only where necessary. Lambda functions inside public subnets do not receive public IP addresses, so an Internet Gateway alone cannot provide their egress.
+Deployment configuration is in `infra/config.json`. The default cost-saving plan sets `schedule_seconds=3600` and `input_sizes=[10]`. The deployment uses each region's existing default VPC and fails explicitly if one is missing. It reuses existing NAT routes where available and adds application-specific private subnets and NAT only where necessary. Lambda functions inside public subnets do not receive public IP addresses, so an Internet Gateway alone cannot provide their egress.
 
 ```bash
 bash scripts/package_lambda.sh
@@ -198,7 +198,7 @@ Management lists the models and inference profiles actually returned by Bedrock
 in the six active regions. Search and multi-select filters narrow the regional
 model/API targets. Select rows and choose **Add selected to probes** or
 **Pause selected**. Changes persist in DynamoDB and apply when each regional
-planner starts its next ten-minute run. Already queued work can finish; historical
+planner starts its next hourly run. Already queued work can finish; historical
 results remain available. The Collection column distinguishes saved selections
 from the policy revision last applied by the scheduler.
 
@@ -268,11 +268,11 @@ For sustained large-scale monthly views, add DynamoDB Streams → S3 Parquet and
 
 ## Automatic refresh and observations
 
-The dashboard refreshes every minute by default. Users can select 30 seconds, one minute, five minutes, or off. A countdown and last-update time show its state. Hidden tabs pause refresh and resume when visible; overlapping requests and obsolete filter responses are cancelled. This refreshes the view; probe collection still runs every ten minutes.
+The dashboard refreshes every minute by default. Users can select 30 seconds, one minute, five minutes, or off. A countdown and last-update time show its state. Hidden tabs pause refresh and resume when visible; overlapping requests and obsolete filter responses are cancelled. This refreshes the view; probe collection runs hourly.
 
 Result rows retain anomaly colors, with explanations in Issues. TTFT p95 is yellow at 5,000 ms and red at 10,000 ms; TTOT p95 is yellow at 30,000 ms and red at 60,000 ms. Latest failed outcomes are red, recovered outcomes are green, and historical failure details are neutral. Window success rates remain accurate and are labelled separately from latest health. Latency coloring requires at least five successful samples and remains visible after an invocation issue recovers. These are observation thresholds, not service SLAs. All dashboard text, statistical observations, and AI conclusions are in English.
 
-The authenticated analysis endpoint accepts the metric filters plus `dimension=model_id|region|provider|endpoint|api`. Historical trends use the selected duration and aggregation period, ending at the latest completed ten-minute boundary. Separately labelled latest-health evidence also considers newer completed scheduled probes from the collecting interval. Manual verification probes are excluded. The model distinguishes old restrictions from current failures and does not infer a reasoning-setting change merely because different models use different defaults.
+The authenticated analysis endpoint accepts the metric filters plus `dimension=model_id|region|provider|endpoint|api`. Historical trends use the selected duration and aggregation period, ending at the latest completed collection boundary (hourly by default). Separately labelled latest-health evidence also considers newer completed scheduled probes from the collecting interval. Manual verification probes are excluded. The model distinguishes old restrictions from current failures and does not infer a reasoning-setting change merely because different models use different defaults.
 
 Time comparisons require the same region, model, provider, endpoint, API, routing, input preset, and configuration ID on both sides. Each side needs at least three completed samples; latency comparisons also need three successful metric samples. Fewer than 20 completed samples per side is marked limited evidence. Aggregates across different configurations remain descriptive and are not used to declare one region inherently faster. A missing observation is not counted as a model failure.
 
@@ -285,18 +285,18 @@ Analysis results share a ten-minute DynamoDB cache across ECS tasks, with a cond
 Daily inference requests:
 
 ```text
-144 ten-minute slots × selected input sizes × sum(discovered targets across regions)
+(86,400 / schedule_seconds) × selected input sizes × sum(enabled targets across regions)
 ```
 
-For example, 50 targets in each of 6 regions and all 3 sizes means **129,600 requests/day**. With a 2,048-token output cap, the cap alone permits up to 265.4 million output tokens/day. Actual charges depend on the model, reasoning, caching, output length, and profile pricing. New discovered models increase the request volume.
+For example, **323 enabled targets × 1 input preset × 24 hourly slots = 7,752 requests/day**. The former three-input, ten-minute plan generated 139,536 requests/day for the same targets. Hourly collection with one input reduces request count by 94.4%; the short-response prompt further reduces output usage. Actual charges depend on model pricing, reasoning, caching, response length and invocation failures. The 2,048-token safety cap still permits up to 15.9 million output tokens/day in this example; the 64-word instruction is a response target, not a guaranteed billing limit. New discovered models increase request volume.
 
 Choose worker concurrency using approximately:
 
 ```text
-jobs per region per slot × mean request duration / 600 seconds
+jobs per region per slot × mean request duration / schedule_seconds
 ```
 
-Add headroom and remain below model quotas. If a region has 150 jobs taking 30 seconds each, 5 workers cannot keep up; increase concurrency or reduce selected models/APIs/sizes. At large volume, a warm ECS worker pool can be cheaper and can support requests longer than Lambda's limits; preserve the same SQS job and measurement contracts.
+Add headroom and remain below model quotas. At a ten-minute cadence, 150 jobs taking 30 seconds each need more than 5 workers to keep up. Keep enough concurrency to finish hourly batches within the separate ten-minute queue-freshness limit. At large volume, a warm ECS worker pool can be cheaper and can support requests longer than Lambda's limits; preserve the same SQS job and measurement contracts.
 
 Infrastructure also includes two continuously running Fargate API tasks, an ALB, NAT egress in the probe regions, DynamoDB, CloudFront, CloudWatch, and six regional SQS/Lambda deployments. Lambda is not the only cost component.
 

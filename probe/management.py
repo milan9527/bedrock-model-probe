@@ -11,7 +11,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, ConfigDict, Field, StrictBool
 
 from probe.auth import administrator, authorize, can_manage
-from probe.config import REGIONS, Target, eligible, select_targets
+from probe.config import REGIONS, Target, eligible, probe_interval_seconds, select_targets
 from probe.selection import default_policy, enabled
 from probe.storage import Store
 
@@ -54,9 +54,10 @@ def management(claims=Depends(authorize)):
                         "scheduled_at": value["schedule"].get("scheduled_at")})
     return {"can_manage": can_manage(claims) and not local, "policy": policy, "regions": regional,
             "targets": sorted(targets, key=lambda t: (t["model_id"], t["region"], t["endpoint"], t["api"])),
-            "next_schedule_at": (int(time.time()) // 600 + 1) * 600,
+            "next_schedule_at": (int(time.time()) // probe_interval_seconds() + 1) * probe_interval_seconds(),
+            "schedule_seconds": probe_interval_seconds(),
             "max_targets_per_region": int(os.getenv("MAX_TARGETS", "100")),
-            "input_sizes": json.loads(os.getenv("INPUT_SIZES", "[1,10,100]"))}
+            "input_sizes": json.loads(os.getenv("INPUT_SIZES", "[10]"))}
 
 
 class PolicyChange(BaseModel):
@@ -96,7 +97,8 @@ def change_policy(change: PolicyChange, claims=Depends(administrator)):
         if exc.response["Error"]["Code"] == "ConditionalCheckFailedException":
             raise HTTPException(409, "Selections changed in another session. Reload Management and try again.") from None
         raise
-    return {"policy": updated, "next_schedule_at": (int(time.time()) // 600 + 1) * 600}
+    interval = probe_interval_seconds()
+    return {"policy": updated, "next_schedule_at": (int(time.time()) // interval + 1) * interval}
 
 
 @router.post("/discover", status_code=202)

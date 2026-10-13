@@ -10,7 +10,7 @@ import boto3
 from botocore.exceptions import ClientError
 
 from infra.aws_network import allow_ingress, default_network, security_group, tags
-from probe.config import REGIONS
+from probe.config import REGIONS, schedule_expression
 
 ROOT = Path(__file__).resolve().parent.parent
 CONFIG = json.loads((ROOT / "infra/config.json").read_text())
@@ -107,6 +107,7 @@ def regional(region, network, update_code=False):
     env = {
         "TABLE_NAME": TABLE, "HOME_REGION": HOME, "QUEUE_URL": job_url,
         "INPUT_SIZES": json.dumps(CONFIG["input_sizes"]),
+        "PROBE_INTERVAL_SECONDS": str(CONFIG.get("schedule_seconds", 3600)),
         "MAX_OUTPUT_TOKENS": str(CONFIG["max_output_tokens"]),
         "ANTHROPIC_THINKING": CONFIG.get("anthropic_thinking", "disabled"),
         "FABLE_GLOBAL_ONLY": str(CONFIG.get("fable_global_only", False)).lower(),
@@ -190,7 +191,8 @@ def regional(region, network, update_code=False):
     ])
     scheduler = boto3.client("scheduler", region_name=region)
     schedule = {
-        "Name": NAME, "ScheduleExpression": "cron(0/10 * * * ? *)", "ScheduleExpressionTimezone": "UTC",
+        "Name": NAME, "ScheduleExpression": schedule_expression(CONFIG.get("schedule_seconds", 3600)),
+        "ScheduleExpressionTimezone": "UTC",
         "State": "ENABLED" if CONFIG["schedule_enabled"] else "DISABLED", "FlexibleTimeWindow": {"Mode": "OFF"},
         "Target": {"Arn": functions["planner"], "RoleArn": scheduler_role,
                    "Input": json.dumps({"scheduled_time": "<aws.scheduler.scheduled-time>"}),
@@ -373,6 +375,7 @@ def dashboard(network):
                 {"name": "FABLE_GLOBAL_ONLY", "value": str(CONFIG.get("fable_global_only", False)).lower()},
                 {"name": "MAX_TARGETS", "value": str(CONFIG["max_targets_per_region"])},
                 {"name": "INPUT_SIZES", "value": json.dumps(CONFIG["input_sizes"])},
+                {"name": "PROBE_INTERVAL_SECONDS", "value": str(CONFIG.get("schedule_seconds", 3600))},
                 {"name": "ANALYSIS_MODEL_ID", "value": analysis_model},
                 {"name": "ANALYSIS_REGION", "value": CONFIG["analysis_region"]},
                 {"name": "ANALYSIS_MAX_CALLS", "value": str(CONFIG["analysis_max_calls_per_10_minutes"])},

@@ -20,7 +20,7 @@
   <header class="topbar">
     <a class="brand" href="/"><span class="brand-mark">b<span>·</span></span> bedrock<span class="brand-light">probe</span></a>
     <nav aria-label="Main navigation"><button class="nav-item active" data-tab="overview">Overview</button><button class="nav-item" data-tab="management">Management</button></nav>
-    <span id="region-coverage" class="coverage-label">6 regions · 10-minute probes</span>
+    <span id="region-coverage" class="coverage-label">6 regions · Hourly probes · 64-word target</span>
     <span id="page-name" hidden>Overview</span>
     <div class="header-right"><span id="mode" class="badge">Connecting</span><button id="auth" class="button quiet">Sign in</button></div>
   </header>
@@ -30,8 +30,8 @@
         <div class="page-heading"><div><h1>Performance overview</h1></div><div class="refresh-controls"><label>Auto-refresh<select id="auto-refresh"><option value="0">Off</option><option value="30">Every 30 seconds</option><option value="60" selected>Every minute</option><option value="300">Every 5 minutes</option></select></label><button id="refresh" class="button">Refresh</button></div></div>
         <div class="status-strip"><span class="status-icon">◷</span><span id="freshness">Waiting for probe data</span><span id="refresh-status" class="refresh-status">Waiting for first refresh</span></div>
         <form id="filters" class="filters">
-          <div class="filter-field"><span>TIME RANGE</span><select name="range" aria-label="Time range" required><option value="3600" selected>Last hour</option><option value="21600">Last 6 hours</option><option value="86400">Last 24 hours</option><option value="604800">Last 7 days</option><option value="2592000">Last 30 days</option></select></div>
-          <div class="filter-field"><span>AGGREGATION</span><select name="period" aria-label="Aggregation" required><option value="600" selected>10 minutes</option><option value="3600">1 hour</option><option value="86400">1 day</option></select></div>
+          <div class="filter-field"><span>TIME RANGE</span><select name="range" aria-label="Time range" required><option value="3600">Last hour</option><option value="21600" selected>Last 6 hours</option><option value="86400">Last 24 hours</option><option value="604800">Last 7 days</option><option value="2592000">Last 30 days</option></select></div>
+          <div class="filter-field"><span>AGGREGATION</span><select name="period" aria-label="Aggregation" required><option value="600">10 minutes</option><option value="3600" selected>1 hour</option><option value="86400">1 day</option></select></div>
           <div class="filter-field"><span>REGION</span><select name="region" aria-label="Region" multiple data-all="All regions"></select></div>
           <div class="filter-field"><span>PROVIDER</span><select name="provider" aria-label="Provider" multiple data-all="All providers"><option>Anthropic</option><option>OpenAI</option></select></div>
           <div class="filter-field"><span>ENDPOINT</span><select name="endpoint" aria-label="Endpoint" multiple data-all="Both endpoints"><option value="runtime">Runtime</option><option value="mantle">Mantle</option></select></div>
@@ -53,7 +53,7 @@
         <section id="analysis-panel" class="panel observation-panel">
           <div class="panel-heading"><div><h2>Stability &amp; latency</h2><p>Stability, latency and time changes for the current filters and view.</p></div><div class="analysis-controls"><div class="filter-field"><span>Analysis dimensions</span><select id="analysis-dimension" aria-label="Analysis dimensions" multiple data-required="true"><option value="model_id" selected>Model</option><option value="region">Region</option><option value="provider">Provider</option><option value="endpoint">Endpoint</option><option value="api">API</option></select></div></div></div>
           <div id="dimension-tabs" class="view-tabs dimension-tabs" aria-label="Selected analysis dimensions"></div>
-          <p id="analysis-scope" class="analysis-scope">Analysis uses completed ten-minute intervals and updates every ten minutes. Probe collection runs every ten minutes.</p>
+          <p id="analysis-scope" class="analysis-scope">Probe collection runs hourly with the 10-token input and a 64-word response target. Trends compare matching prompt configurations across completed collection intervals.</p>
           <div class="observation-grid">
             <article><h3>Statistical observations</h3><ul id="observations"><li>Waiting for statistics in the current view.</li></ul></article>
             <article class="ai-conclusion"><h3>AI conclusions <span id="analysis-model"></span></h3><div id="ai-text" aria-live="polite">Analysis follows the selected dimensions.</div></article>
@@ -70,7 +70,7 @@
           <details class="threshold-help"><summary>Color thresholds &amp; comparison notes</summary><p>TTFT P95: yellow ≥ 5,000 ms, red ≥ 10,000 ms. TTOT P95: yellow ≥ 30,000 ms, red ≥ 60,000 ms. Requires 5 successful samples. Latest failures are red; recovered results are green. Historical failures remain in window statistics. Inputs are combined; configurations stay separate.</p></details>
           <div class="table-scroll"><table><thead><tr><th>MODEL / ENDPOINT</th><th>REGION / ROUTING</th><th>TTFT P50</th><th>TTFT P95</th><th>TTOT P95</th><th>OUTPUT TOK/S</th><th>WINDOW SUCCESS</th><th>ISSUES</th></tr></thead><tbody id="results"><tr><td colspan="8" class="empty-cell">No probe results in this period.<small>Check the selected model, region, and time range.</small></td></tr></tbody></table></div>
         </article>
-        <p class="footnote">Time range and aggregation use one selection each; other filters accept multiple values. Model options match the selected regions and providers. An empty categorical filter includes all matching values. Metrics combine the selected input presets; AI trends compare identical inputs and configurations. Regions identify endpoints; profiles may execute elsewhere. Missing measurements are never zero. Color thresholds are observation aids, not SLAs.</p>
+        <p class="footnote">Collection: hourly, 10-token input, 64-word response target. Historical story prompts remain separate in the table; charts combine selected configurations. Shorter output changes TTOT and throughput; AI trends compare matching prompts and configurations only. Model options match selected regions and providers. Regions identify endpoints; profiles may execute elsewhere. Missing measurements are never zero. Color thresholds are observation aids, not SLAs.</p>
         <details class="panel failures"><summary>Failure history in selected window</summary><div id="failures" class="detail-content">None in this period.</div></details>
       </section>
       <section id="management" class="tab" hidden>
@@ -88,9 +88,9 @@
           <div class="filter-field"><span>API</span><select name="api" aria-label="Management API" multiple data-all="All APIs"><option value="converse">Converse</option><option value="messages">Messages</option><option value="responses">Responses</option><option value="chat">Chat Completions</option></select></div>
           <div class="filter-field"><span>PROBE SELECTION</span><select name="enabled" aria-label="Probe selection" multiple data-all="All selections"><option value="true">Enabled</option><option value="false">Not enabled</option></select></div>
         </form>
-        <div class="management-actions"><span id="management-selection">0 selected</span><button id="enable-probes" class="button primary" disabled>Add selected to probes</button><button id="pause-probes" class="button" disabled>Pause selected</button><span id="management-schedule">Changes apply to the next ten-minute run; queued probes can finish.</span></div>
+        <div class="management-actions"><span id="management-selection">0 selected</span><button id="enable-probes" class="button primary" disabled>Add selected to probes</button><button id="pause-probes" class="button" disabled>Pause selected</button><span id="management-schedule">Changes apply to the next hourly run; queued probes can finish.</span></div>
         <article class="panel management-table"><div class="table-scroll"><table><thead><tr><th><input id="select-visible-targets" type="checkbox" aria-label="Select all filtered targets"></th><th>MODEL / PROFILE</th><th>REGION</th><th>ENDPOINT / API</th><th>ROUTING</th><th>PROBE SELECTION</th><th>COLLECTION</th></tr></thead><tbody id="management-results"><tr><td colspan="7" class="empty-cell">Loading discovered models…</td></tr></tbody></table></div></article>
-        <p class="footnote">One target is a model/profile × region × endpoint × API. Each enabled target runs all configured input presets every ten minutes. Discovery confirms availability; successful probes confirm invocation access. New measurements appear in Overview after collection. Pausing keeps historical data. Turning automatic addition off preserves existing selections.</p>
+        <p class="footnote">One target is a model/profile × region × endpoint × API. Each enabled target runs hourly with the 10-token input and a 64-word response target. Discovery confirms availability; successful probes confirm invocation access. New measurements appear in Overview after collection. Pausing keeps historical data. Turning automatic addition off preserves existing selections.</p>
       </section>
     </main>
     <footer><span>BEDROCK PROBE</span><span>Measured from AWS · All times UTC</span></footer>

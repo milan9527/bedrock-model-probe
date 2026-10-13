@@ -1,5 +1,6 @@
 import hashlib
 import json
+import os
 import re
 from dataclasses import asdict, dataclass
 
@@ -12,19 +13,36 @@ REGIONS = {
     "eu-central-1": "Frankfurt",
 }
 SIZES = (1, 10, 100)
-PROMPT_VERSION = "repeat-v1"
+PROMPT_VERSION = "short-64-v2"
 DEFAULT_MAX_OUTPUT = 2048
 
 
-def prompt(size: int) -> str:
+def probe_interval_seconds() -> int:
+    interval = int(os.getenv("PROBE_INTERVAL_SECONDS", "3600"))
+    if interval not in (600, 3600):
+        raise ValueError("PROBE_INTERVAL_SECONDS must be 600 or 3600")
+    return interval
+
+
+def schedule_expression(interval: int) -> str:
+    if interval not in (600, 3600):
+        raise ValueError("schedule_seconds must be 600 or 3600")
+    return "cron(0 * * * ? *)" if interval == 3600 else "cron(0/10 * * * ? *)"
+
+
+def prompt(size: int, version: str = PROMPT_VERSION) -> str:
     """Nominal text-token presets; actual model usage is recorded separately."""
     if size not in SIZES:
         raise ValueError("Input preset must be 1, 10 or 100")
+    if version not in ("repeat-v1", PROMPT_VERSION):
+        raise ValueError("Unknown probe prompt version")
     if size == 1:
         return "Hello"
     # Exactly 10 and 100 text tokens under the cl100k_base reference encoding.
     # This is NOT a claim about any model's private tokenizer or billed message framing.
-    seed = "Write a story about a journey through outer space."
+    # Retain the original text for jobs queued before the short-response release.
+    seed = ("Write a story about a journey through outer space." if version == "repeat-v1"
+            else "Reply in exactly 64 words about cloud computing.")
     return seed if size == 10 else " ".join([seed] * 10)
 
 

@@ -9,7 +9,15 @@ from datetime import datetime
 import boto3
 
 from probe.adapters import run
-from probe.config import DEFAULT_MAX_OUTPUT, PROMPT_VERSION, SIZES, Target, prompt, select_targets
+from probe.config import (
+    DEFAULT_MAX_OUTPUT,
+    PROMPT_VERSION,
+    SIZES,
+    Target,
+    probe_interval_seconds,
+    prompt,
+    select_targets,
+)
 from probe.discovery import discover, snapshot
 from probe.selection import enabled
 from probe.storage import Store
@@ -21,6 +29,7 @@ def make_job(target: Target, size: int, slot: int, max_output: int, anthropic_th
     model_name = target.model_id.split("anthropic.")[-1].split(":")[0]
     supports_disabled = model_name in ("claude-opus-5", "claude-haiku-5-5")
     config = {"max_output": max_output, "prompt_version": PROMPT_VERSION,
+              "schedule_seconds": probe_interval_seconds(),
               "reasoning": anthropic_thinking if target.provider == "Anthropic" and supports_disabled else "model-default",
               "service_tier": "default"}
     config_id = hashlib.sha256(json.dumps(config, sort_keys=True).encode()).hexdigest()[:12]
@@ -41,7 +50,8 @@ def planner(event, context):
     if unresolved:
         print(json.dumps({"warning": "Scheduler time token was not expanded",
                           "schedule_time_source": source}))
-    slot = now // 600 * 600
+    interval = probe_interval_seconds()
+    slot = now // interval * interval
     targets, issues = discover(region)
     store = Store()
     # Preserve known targets only on a surface whose discovery failed. A partial
@@ -73,7 +83,7 @@ def planner(event, context):
         issues.append({"surface": "planner", "error": f"{len(targets)} targets exceeds MAX_TARGETS={max_targets}; no jobs sent"})
         store.catalog(region, snapshot(targets, issues, int(time.time())))
         raise ValueError("Target budget exceeded; raise MAX_TARGETS or narrow discovery")
-    sizes = json.loads(os.getenv("INPUT_SIZES", "[1,10,100]"))
+    sizes = json.loads(os.getenv("INPUT_SIZES", "[10]"))
     if not sizes or any(size not in SIZES for size in sizes):
         raise ValueError("INPUT_SIZES must be a nonempty subset of [1,10,100]")
     max_output = int(os.getenv("MAX_OUTPUT_TOKENS", str(DEFAULT_MAX_OUTPUT)))
@@ -85,7 +95,8 @@ def planner(event, context):
         job["schedule_time_source"] = source
     catalog = snapshot(targets, issues, int(time.time()))
     catalog.update(scheduled_at=slot, schedule_time_source=source, planned_jobs=len(jobs), enqueued_jobs=0,
-                   policy_revision=policy["revision"], discovered_targets=len(discovered["targets"]))
+                   policy_revision=policy["revision"], discovered_targets=len(discovered["targets"]),
+                   schedule_seconds=interval, input_sizes=sizes, prompt_version=PROMPT_VERSION)
     store.catalog(region, catalog)
     sqs = boto3.client("sqs", region_name=region)
     for offset in range(0, len(jobs), 10):
@@ -115,14 +126,14 @@ def worker(event, context):
             if not store.claim(job):
                 continue
             if time.time() - job["scheduled_at"] > 600:
-                store.finish(job, {"status": "stale", "error": "Queue delay exceeded one schedule interval"})
+                store.finish(job, {"status": "stale", "error": "Queue delay exceeded the ten-minute freshness limit"})
                 continue
             target = Target(**{name: job[name] for name in Target.__dataclass_fields__})
             previous = signal.signal(signal.SIGALRM, deadline)
             signal.alarm(120)
             try:
                 started_at = time.time()
-                result = run(target, prompt(job["input_size"]), job["max_output"],
+                result = run(target, prompt(job["input_size"], job.get("prompt_version", "repeat-v1")), job["max_output"],
                              reasoning=job.get("reasoning", "model-default"))
             finally:
                 signal.alarm(0)

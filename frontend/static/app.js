@@ -16,7 +16,7 @@ let lastQuery, analysisRequest, analysisKey = "", analysisPoll, analysisRetryAt 
 let activeDimension = "model_id";
 let healthSignature = "";
 let chartSeries = [], chartResize;
-let chartWindow = { start: 0, end: 0, period: 600 };
+let chartWindow = { start: 0, end: 0, period: 3600 }, probeInterval = 3600;
 const management = initManagement(api, refresh);
 const token = () => sessionStorage.getItem("access_token");
 const base64url = (bytes) => btoa(String.fromCharCode(...bytes)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
@@ -296,7 +296,7 @@ function tableRow(row) {
     : [state.level, ttft, ttot].includes("warning") ? "warning" : state.level;
   return `<tr class="anomaly-${severity}">
     <td><span class="provider-dot ${row.provider === "OpenAI" ? "openai" : ""}"></span>${escape(row.model_id)}
-      <small>${escape(row.endpoint)} · ${escape(row.api)} · ${row.max_output ? `${format(row.max_output)} cap` : escape(row.config_id)} · ${row.reasoning === "disabled" ? "Thinking off" : "Default reasoning"}</small></td>
+      <small>${escape(row.endpoint)} · ${escape(row.api)} · ${row.max_output ? `${format(row.max_output)} cap` : escape(row.config_id)} · ${row.reasoning === "disabled" ? "Thinking off" : "Default reasoning"} · ${row.prompt_version === "short-64-v2" ? "64-word response" : "Story prompt"}</small></td>
     <td>${escape(regions[row.region] || row.region)}<small>${escape(row.routing)}</small></td>
     <td>${row.ttft_ms.p50 == null ? "—" : format(row.ttft_ms.p50)+" ms"}</td>
     <td class="metric-${ttft}" title="${row.ttft_ms.n} successful samples; warning ≥ ${format(thresholds.ttft_ms.warning)} ms, critical ≥ ${format(thresholds.ttft_ms.critical)} ms">${row.ttft_ms.p95 == null ? "—" : format(row.ttft_ms.p95)+" ms"}</td>
@@ -342,7 +342,7 @@ function render(data) {
   $("sample-count").textContent = `${format(data.samples)} scheduled samples · ${format(count-successes)} unsuccessful in window`;
   $("series-count").textContent = `${data.summary.length} combinations`;
   $("freshness").textContent = data.latest_sample
-    ? `Latest scheduled sample: ${utc(data.latest_sample)}${Date.now()/1000-data.latest_sample>1200 ? " · Data is stale" : ""}`
+    ? `Latest scheduled sample: ${utc(data.latest_sample)}${Date.now()/1000-data.latest_sample>2*probeInterval ? " · Data is stale" : ""}`
     : "No measurements in the selected period";
   const failures = {};
   for (const row of data.summary) for (const [reason, n] of Object.entries(row.failure_counts || {})) {
@@ -377,7 +377,7 @@ function analysisIdentity(query) {
   const end = Number(identity.get("end"));
   identity.set("range", end - Number(identity.get("start")));
   identity.delete("start");
-  identity.set("end", Math.floor(end/600)*600);
+  identity.set("end", Math.floor(end/probeInterval)*probeInterval);
   identity.set("dimension", activeDimension);
   identity.set("available_regions", Object.keys(regions).sort().join(","));
   identity.set("health", healthSignature);
@@ -480,7 +480,8 @@ async function refresh() {
     if (controller !== current) return;
     thresholds = config.anomaly_thresholds || thresholds;
     regions = config.regions;
-    $("region-coverage").textContent = `${Object.keys(regions).length} regions · 10-minute probes`;
+    probeInterval = config.schedule_seconds || 3600;
+    $("region-coverage").textContent = `${Object.keys(regions).length} regions · ${probeInterval === 3600 ? "Hourly" : probeInterval / 60 + "-minute"} probes · 64-word target`;
     management.setRegions(regions);
     const select = $("filters").elements.region;
     const selectedRegions = new Set([...select.selectedOptions].map(option => option.value));
